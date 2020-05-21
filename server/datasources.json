@@ -5,7 +5,7 @@
     "url": "",
     "database": "chatServer",
     "password": "",
-    "name": "db2",
+    "name": "db",
     "user": "",
     "useNewUrlParser": true,
     "connector": "mongodb"
