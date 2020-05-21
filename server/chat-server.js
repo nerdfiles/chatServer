@@ -5,6 +5,8 @@ var models = require('./server.js').models;
 const PORT = process.env.PORT || 8080;
 const ws = new WebSocket.Server({port: PORT});
 
+const clients = [];
+
 console.log(`started ws on ${PORT}`)
 
 ws.on('connection', (ws) => {
@@ -28,6 +30,18 @@ ws.on('connection', (ws) => {
               error: errFindOne
             }));
           } else {
+
+            const userObject = {
+              id: user.id,
+              email: user.email,
+              ws: ws
+            };
+
+            clients.push(userObject);
+
+            console.log('current clients', clients)
+
+
             ws.send(JSON.stringify({
               type: 'LOGGEDIN',
               data: {
@@ -88,6 +102,20 @@ ws.on('connection', (ws) => {
         case 'LOGIN':
           console.log('loggin in', parsed.data)
           login(parsed.data.email, parsed.data.password);
+          break;
+
+        case 'SEARCH':
+          console.log('Searching for', parsed.data);
+          models.User.find({where: {email: {like: parsed.data}}}, (errSearch, users) => {
+            if (!errSearch && users) {
+              ws.send(JSON.stringify({
+                type: 'GOT_USERS',
+                data: {
+                  users: users
+                }
+              }));
+            }
+          });
           break;
 
         default:
