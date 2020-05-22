@@ -9,22 +9,39 @@ const clients = [];
 
 console.log(`started ws on ${PORT}`)
 
+const printClientCount = () => {
+  console.log('Clients', clients.length)
+}
+
+//setInterval(printClientCount, 1000)
+
 ws.on('connection', (ws) => {
 
-  function getInitialThreads(userId) {
-    console.log('current user', userId)
+  const getInitialThreads = async function(userId) {
 
-    models.Thread.find({where: {} }, (err, threads) => {
-      // console.log(threads)
+    models.Thread.find({where: { }, include: 'Messages'}, (err, threads) => {
+
       if (!err && threads) {
-        ws.send(JSON.stringify({
-          type: 'INITIAL_THREADS',
-          data: threads
-        }))
+
+        threads.map((thread, i) => {
+          models.User.find({
+            where: {id: {inq: thread.users}}
+          }, (errUser, users) => {
+            thread.profiles = users;
+            console.log(threads)
+
+            if (i === threads.length - 1) {
+              ws.send(JSON.stringify({
+                type: 'INITIAL_THREADS',
+                data: threads
+              }))
+            }
+          })
+        })
       }
     })
 
-  }
+  };
 
   function login(email, pass) {
     models.User.login({
@@ -53,7 +70,7 @@ ws.on('connection', (ws) => {
               ws: ws
             };
 
-            //clients.push(userObject);
+            clients.push(userObject);
 
             //console.log('current clients', clients)
 
@@ -75,10 +92,18 @@ ws.on('connection', (ws) => {
 
   ws.on('close', req => {
     console.log('req close', req)
-    clients.map(c => {
-      console.log(c.ws._closeCode, c.id)
-    })
-  })
+    let clientIndex = -1
+    clients
+      .map((c, i) => {
+        if (c.ws._closeCode === req) {
+          clientIndex = i
+        }
+      });
+
+    if (clientIndex > -1) {
+      clients.splice(clientIndex, 1)
+    }
+  });
 
   ws.on('message', message => {
 
@@ -134,7 +159,7 @@ ws.on('connection', (ws) => {
               ws: ws
             };
 
-            //clients.push(userObject);
+            clients.push(userObject);
 
             //console.log('current clients', clients)
 
@@ -216,8 +241,42 @@ ws.on('connection', (ws) => {
 
         case 'THREAD_LOAD':
           console.log('THREAD_LOAD')
+          models.Message.find({
+            where: {
+              threadId: parsed.data.threadId,
+            },
+            order: 'date DESC',
+            skip: parsed.data.skip,
+            limit: 10
+          }, (errMessage, messages) => {
+            console.log(message)
+            if (!errMessage && messages) {
+              ws.send(JSON.stringify({
+                type: 'GOT_MESSAGES',
+                threadId: parsed.data.threadId,
+                messages: messages
+              }));
+            }
+          })
           break;
 
+        case 'ADD_MESSAGE':
+          models.Thread.findById(parsed.threadId, (errAddMessage, thread) => {
+            if (!errAddMessage && thread) {
+              models.Message.upsert(parsed.message, (errInsert, message) => {
+                clients
+                  .filter(client => thread.users.indexOf(client.id.toString()) > -1)
+                  .map(client => {
+                    client.ws.send(JSON.stringify({
+                      type: 'ADD_MESSAGE_TO_THREAD',
+                      threadId: parsed.threadId,
+                      message: message
+                    }));
+                  });
+              });
+            }
+          });
+          break;
 
         default:
           console.log('Nothing to see here');
